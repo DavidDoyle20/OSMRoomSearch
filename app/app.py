@@ -31,7 +31,7 @@ def get_osm_parser():
     """Returns the pre-initialized OSM parser."""
     return osm_parser
 
-@app.route('/find-room', methods=['POST'])
+@app.route('/v1/find-room', methods=['POST'])
 @cache.cached(query_string=True)
 def handle_find_room():
     """Endpoint for finding rooms within buildings"""
@@ -152,10 +152,34 @@ def find_room(building_name: str, room_identifier: str, pbf_path: str) -> dict:
 
     return exact_matches[0]  # Return first exact match with nodes included
 
-@app.route('/cache-test')
+@app.route('/v1/rooms', methods=['GET'])
+@cache.cached(query_string=True)
+def handle_rooms():
+    osm = get_osm_parser()
+
+    buildings = osm.get_data_by_custom_criteria(
+        custom_filter={
+            "building": ["university"]
+        },
+    )
+    results = []
+    for _, row in buildings.iterrows():
+        results.append({
+            "osm_id": row.get("osm_id"),
+            "name": row.get("name"),
+        })
+    return jsonify(results)
+
+
+@app.route('/v1/cache-test')
 @cache.cached(timeout=60)
 def cache_test():
     return jsonify({"message": "This response is cached for 60 seconds"})
+
+@app.route('/v1/clear-cache', methods=['POST'])
+def clear_cache():
+    cache.clear() 
+    return jsonify({"message": "Cache cleared successfully"}), 200
     
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
