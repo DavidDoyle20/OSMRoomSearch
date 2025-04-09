@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify
+import hashlib
+from flask import Flask, json, request, jsonify
 from flask_cors import CORS  # For cross-origin support
 from flask_caching import Cache
 
@@ -31,8 +32,24 @@ def get_osm_parser():
     """Returns the pre-initialized OSM parser."""
     return osm_parser
 
+def make_request_body_cache_key(*args, **kwargs):
+    try:
+        json_data = request.get_json()
+        if not json_data:
+            return request.path 
+            
+        payload_str = json.dumps(json_data, sort_keys=True) 
+        
+        payload_hash = hashlib.md5(payload_str.encode('utf-8')).hexdigest()
+        
+        cache_key = f"{request.path}:{payload_hash}"
+        return cache_key
+    except Exception:
+        return request.path
+    
+
 @app.route('/v1/find-room', methods=['POST'])
-@cache.cached(query_string=True)
+@cache.cached(make_cache_key=make_request_body_cache_key)
 def handle_find_room():
     """Endpoint for finding rooms within buildings"""
     try:
@@ -62,15 +79,10 @@ def find_room(building_name: str, room_identifier: str, pbf_path: str) -> dict:
     # Initialize OSM parser
     osm = get_osm_parser()
 
-    # 1. Find the target building
-    buildings = osm.get_data_by_custom_criteria(
+    buildings = osm.get_buildings(
         custom_filter={
-            "name": [building_name], 
-            "building": ["yes", "university"]
-        },
-        keep_ways=True,
-        keep_relations=True
-    )
+            "name": [building_name]
+        })
     
     if buildings.empty:
         return {"error": f"Building '{building_name}' not found"}
@@ -93,6 +105,7 @@ def find_room(building_name: str, room_identifier: str, pbf_path: str) -> dict:
     
     if rooms.empty:
         return {"error": f"Room '{room_identifier}' not found in dataset"}
+    
     
     # 3. Spatial query to find rooms within building
     rooms["centroid"] = rooms.geometry.apply(
@@ -180,6 +193,6 @@ def cache_test():
 def clear_cache():
     cache.clear() 
     return jsonify({"message": "Cache cleared successfully"}), 200
-    
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
