@@ -166,24 +166,44 @@ def find_room(building_name: str, room_identifier: str, pbf_path: str) -> dict:
 
     return exact_matches[0]  # Return first exact match with nodes included
 
-@app.route('/v1/rooms', methods=['GET'])
+@app.route('/v1/building', methods=['GET'])
 @cache.cached(query_string=True)
-def handle_rooms():
+def handle_building():
     osm = get_osm_parser()
 
     buildings = osm.get_data_by_custom_criteria(
         custom_filter={
             "building": ["university"]
         },
+        extra_attributes=["name"],
+        filter_type="keep",
     )
+
+    if buildings.empty:
+        return {"error": "No buildings found"}
+    
+    
+    # Ensures only buildings with name or ref tags are included
+    buildings = buildings[buildings["name"].notnull()]
+    
     results = []
     for _, row in buildings.iterrows():
-        results.append({
-            "osm_id": row.get("osm_id"),
-            "name": row.get("name"),
-        })
-    return jsonify(results)
+        building_nodes = []
+        if row.geometry.geom_type == "Polygon":
+            building_nodes = list(row.geometry.exterior.coords)
+        elif row.geometry.geom_type == "MultiPolygon":
+            for poly in row.geometry.geoms:
+                building_nodes.extend(list(poly.exterior.coords))
 
+        results.append({
+            "latitude": row.geometry.centroid.y,
+            "longitude": row.geometry.centroid.x,
+            "osm_id": row.id,
+            "name": row.get("name"),
+            "nodes": [{"latitude": coord[1], "longitude": coord[0]} for coord in building_nodes]
+        })
+    results.insert(0, {'count': len(results)})
+    return jsonify(results)
 
 @app.route('/v1/cache-test')
 @cache.cached(timeout=60)
@@ -196,4 +216,4 @@ def clear_cache():
     return jsonify({"message": "Cache cleared successfully"}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True)
