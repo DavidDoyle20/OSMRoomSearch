@@ -91,6 +91,7 @@ def find_room(building_name: str, room_identifier: str, pbf_path: str) -> dict:
     building_geom = unary_union(buildings.geometry)
     
     # 2. Find all potential rooms
+    room_identifier = room_identifier.upper()
     rooms = osm.get_data_by_custom_criteria(
         custom_filter={
             "indoor": ["room"],
